@@ -1,29 +1,35 @@
 import React, { useMemo, useState, useCallback, useLayoutEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useData } from '../context/DataContext';
 import ScreenFade from '../utils/ScreenFade';
+import { DEFAULT_BUDGET } from '../utils/storage';
 
 const CATEGORY_COLORS = { essential: '#3B82F6', planned: '#8B5CF6', other: '#6B7280' };
 const CATEGORY_LABELS = { essential: '刚需', planned: '预计', other: '其他' };
 
 const fmt = (n) => `¥${Number(n).toFixed(2)}`;
 
-function ProgressBar({ current, max, color, noOver }) {
+function ProgressBar({ current, max, color, noOver, warnUnder }) {
   const pct = max > 0 ? Math.min(current / max, 1) : 0;
-  const over = !noOver && max > 0 && current > max;
+  const over  = !noOver  && max > 0 && current > max;
+  const under = warnUnder && max > 0 && current < max;
+  const trackStyle = under ? styles.trackUnder : over ? styles.trackOver : null;
+  const fillColor  = (over || under) ? '#EF4444' : color;
   return (
-    <View style={[styles.track, over && styles.trackOver]}>
-      <View style={[styles.fill, { width: `${pct * 100}%`, backgroundColor: over ? '#EF4444' : color }]} />
+    <View style={[styles.track, trackStyle]}>
+      <View style={[styles.fill, { width: `${pct * 100}%`, backgroundColor: fillColor }]} />
     </View>
   );
 }
 
 export default function HomeScreen() {
   const navigation = useNavigation();
-  const { transactions, budget } = useData();
+  const { transactions, budgets, importData } = useData();
   const insets = useSafeAreaInsets();
   const [offset, setOffset] = useState(0);
 
@@ -33,14 +39,24 @@ export default function HomeScreen() {
 
   const targetDate = useMemo(() => {
     const d = new Date();
+    d.setDate(1);
     d.setMonth(d.getMonth() + offset);
     return d;
   }, [offset]);
 
-  const monthKey = useMemo(() => targetDate.toISOString().slice(0, 7), [targetDate]);
+  const monthKey = useMemo(() => {
+    const y = targetDate.getFullYear();
+    const m = String(targetDate.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}`;
+  }, [targetDate]);
   const monthLabel = useMemo(
     () => `${targetDate.getFullYear()}年${targetDate.getMonth() + 1}月`,
     [targetDate]
+  );
+
+  const budget = useMemo(
+    () => budgets[monthKey] || DEFAULT_BUDGET,
+    [budgets, monthKey]
   );
 
   const monthTxns = useMemo(
@@ -82,6 +98,42 @@ export default function HomeScreen() {
   const recent = useMemo(() => monthTxns.slice(0, 6), [monthTxns]);
   const budgetSet = budget.income > 0 || budget.essential > 0 || budget.savings > 0;
 
+  const handleImport = useCallback(async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({ type: 'application/json', copyToCacheDirectory: true });
+      if (res.canceled) return;
+
+      const raw = await FileSystem.readAsStringAsync(res.assets[0].uri);
+      const data = JSON.parse(raw);
+
+      if (!Array.isArray(data.transactions) || typeof data.budgets !== 'object') {
+        Alert.alert('格式错误', '所选文件不是有效的 MoneyTracker 备份');
+        return;
+      }
+
+      Alert.alert('导入方式', `检测到 ${data.transactions.length} 条记录`, [
+        {
+          text: '合并（保留现有）',
+          onPress: () => {
+            importData(data.transactions, data.budgets, 'merge');
+            Alert.alert('导入成功', '数据已合并');
+          },
+        },
+        {
+          text: '替换（清除现有）',
+          style: 'destructive',
+          onPress: () => {
+            importData(data.transactions, data.budgets, 'replace');
+            Alert.alert('导入成功', '数据已替换');
+          },
+        },
+        { text: '取消', style: 'cancel' },
+      ]);
+    } catch (e) {
+      Alert.alert('导入失败', e.message);
+    }
+  }, [importData]);
+
   useLayoutEffect(() => {
     navigation.setOptions({
       headerShown: true,
@@ -104,9 +156,13 @@ export default function HomeScreen() {
         </View>
       ),
       headerTitleAlign: 'center',
-      headerRight: () => <View style={styles.headerSpacer} />,
+      headerRight: () => (
+        <TouchableOpacity onPress={handleImport} style={styles.headerImportBtn}>
+          <Ionicons name="download-outline" size={22} color="#6B7280" />
+        </TouchableOpacity>
+      ),
     });
-  }, [navigation, monthLabel, offset]);
+  }, [navigation, monthLabel, offset, handleImport]);
 
   return (
     <ScreenFade>
@@ -159,18 +215,18 @@ export default function HomeScreen() {
 
         {[
           { key: 'essential', label: '刚需支出', spent: budget.essential + stats.essentialSpent, limit: budget.essential, color: '#3B82F6' },
-          { key: 'savings', label: '攒钱目标', spent: Math.max(0, stats.savingsAvailable), limit: budget.savings, color: '#F59E0B', noOver: true },
+          { key: 'savings',  label: '攒钱目标', spent: Math.max(0, stats.savingsAvailable), limit: budget.savings, color: '#F59E0B', noOver: true, warnUnder: budget.savings > 0 },
         ].map((item, idx) => (
           <View key={item.key} style={[styles.budgetItem, idx === 1 && { marginBottom: 0 }]}>
             <View style={styles.budgetLabelRow}>
               <View style={[styles.dot, { backgroundColor: item.color }]} />
               <Text style={styles.budgetLabel}>{item.label}</Text>
               <Text style={styles.budgetAmt}>
-                {item.reverse ? fmt(item.spent) : fmt(item.spent)} / {item.limit > 0 ? fmt(item.limit) : '未设置'}
+                {fmt(item.spent)} / {item.limit > 0 ? fmt(item.limit) : '未设置'}
               </Text>
             </View>
             {item.limit > 0 && (
-              <ProgressBar current={item.spent} max={item.limit} color={item.color} noOver={item.noOver} />
+              <ProgressBar current={item.spent} max={item.limit} color={item.color} noOver={item.noOver} warnUnder={item.warnUnder} />
             )}
           </View>
         ))}
@@ -216,7 +272,7 @@ const styles = StyleSheet.create({
   monthRow: { flexDirection: 'row', alignItems: 'center' },
   monthBtn: { padding: 6 },
   monthLabel: { fontSize: 15, fontWeight: '600', color: '#111827', marginHorizontal: 8 },
-  headerSpacer: { width: 70 },
+  headerImportBtn: { paddingRight: 16, paddingLeft: 8 },
   tipCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -268,6 +324,7 @@ const styles = StyleSheet.create({
   budgetAmt: { fontSize: 12, color: '#6B7280' },
   track: { height: 6, backgroundColor: '#E5E7EB', borderRadius: 3, overflow: 'hidden' },
   trackOver: { backgroundColor: '#FEE2E2' },
+  trackUnder: { backgroundColor: '#FECACA' },
   fill: { height: '100%', borderRadius: 3 },
   txRow: {
     flexDirection: 'row',

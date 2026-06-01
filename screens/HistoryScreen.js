@@ -1,9 +1,11 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useLayoutEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { useData } from '../context/DataContext';
 import ScreenFade from '../utils/ScreenFade';
+import ExportModal from './ExportModal';
 
 const CATEGORY_LABELS = { essential: '刚需', planned: '预计', other: '其他' };
 const CATEGORY_COLORS = { essential: '#3B82F6', planned: '#8B5CF6', other: '#6B7280' };
@@ -11,8 +13,20 @@ const CATEGORY_COLORS = { essential: '#3B82F6', planned: '#8B5CF6', other: '#6B7
 const fmt = (n) => `¥${Number(n).toFixed(2)}`;
 
 export default function HistoryScreen() {
+  const navigation = useNavigation();
   const { transactions, deleteTransaction } = useData();
   const insets = useSafeAreaInsets();
+  const [showExport, setShowExport] = useState(false);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity onPress={() => setShowExport(true)} style={{ paddingRight: 16 }}>
+          <Ionicons name="share-outline" size={22} color="#6B7280" />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation]);
 
   const grouped = useMemo(() => {
     const map = {};
@@ -100,6 +114,7 @@ export default function HistoryScreen() {
 
   return (
     <ScreenFade>
+      <ExportModal visible={showExport} onClose={() => setShowExport(false)} />
       <FlatList
         data={grouped}
         keyExtractor={(item) => item.key}

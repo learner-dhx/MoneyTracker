@@ -7,6 +7,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useData } from '../context/DataContext';
+import { DEFAULT_BUDGET } from '../utils/storage';
 import ScreenFade from '../utils/ScreenFade';
 
 const CATEGORIES = [
@@ -24,7 +25,7 @@ function dateToStr(d) {
 }
 
 export default function AddScreen() {
-  const { addTransaction, transactions, budget } = useData();
+  const { addTransaction, transactions, budgets } = useData();
   const insets = useSafeAreaInsets();
 
   const [type, setType] = useState('expense');
@@ -51,6 +52,7 @@ export default function AddScreen() {
     addTransaction({ amount: num, type, category: type === 'expense' ? category : 'other', note: note.trim(), date: dateStr });
 
     // Overspending check
+    const budget = budgets[dateStr.slice(0, 7)] || DEFAULT_BUDGET;
     if (type === 'expense' && BUDGET_KEYS[category] && budget[category] > 0) {
       const monthKey = dateStr.slice(0, 7);
       const prevSpent = transactions
@@ -80,7 +82,7 @@ export default function AddScreen() {
     setNote('');
     setPickerDate(new Date());
     Alert.alert('✅ 已记录', `${type === 'income' ? '收入' : CATEGORY_NAMES[category]} ${fmt(num)}`);
-  }, [amount, type, category, note, dateStr, addTransaction, transactions, budget]);
+  }, [amount, type, category, note, dateStr, addTransaction, transactions, budgets]);
 
   const selectedCat = useMemo(() => CATEGORIES.find((c) => c.id === category), [category]);
 

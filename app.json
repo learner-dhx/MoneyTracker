@@ -28,7 +28,11 @@
     },
     "plugins": [
       "@react-native-community/datetimepicker",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-image-picker",
+        { "photosPermission": "允许访问相册以设置头像" }
+      ]
     ],
     "extra": {
       "eas": {

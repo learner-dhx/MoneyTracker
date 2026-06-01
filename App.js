@@ -11,6 +11,7 @@ import HomeScreen from './screens/HomeScreen';
 import AddScreen from './screens/AddScreen';
 import BudgetScreen from './screens/BudgetScreen';
 import HistoryScreen from './screens/HistoryScreen';
+import ProfileScreen from './screens/ProfileScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -19,6 +20,7 @@ const SCREENS = [
   { name: 'Add',     component: AddScreen,     label: '记账',    icon: 'add-circle', iconOff: 'add-circle-outline' },
   { name: 'Budget',  component: BudgetScreen,  label: '预算',    icon: 'pie-chart',  iconOff: 'pie-chart-outline' },
   { name: 'History', component: HistoryScreen, label: '历史',    icon: 'list',       iconOff: 'list-outline' },
+  { name: 'Profile', component: ProfileScreen, label: '我的',    icon: 'person',     iconOff: 'person-outline' },
 ];
 
 const TAB_ORDER = SCREENS.map((s) => s.name);
@@ -69,7 +71,7 @@ export default function App() {
                   key={s.name}
                   name={s.name}
                   component={s.component}
-                  options={{ title: s.label, tabBarLabel: s.label }}
+                  options={{ title: s.label, tabBarLabel: s.label, headerShown: s.name !== 'Profile' }}
                 />
               ))}
             </Tab.Navigator>

@@ -1,50 +1,73 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useLayoutEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
   TouchableOpacity, Alert, Keyboard, TouchableWithoutFeedback,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { useData } from '../context/DataContext';
+import { DEFAULT_BUDGET } from '../utils/storage';
 import ScreenFade from '../utils/ScreenFade';
 
 const FIELDS = [
-  {
-    key: 'income',
-    label: '月收入（税后）',
-    icon: 'wallet-outline',
-    color: '#10B981',
-    desc: '每月固定工资或主要收入',
-  },
-  {
-    key: 'essential',
-    label: '刚需支出上限',
-    icon: 'home-outline',
-    color: '#3B82F6',
-    desc: '房租、水电煤、伙食、交通等必须支出',
-  },
-  {
-    key: 'savings',
-    label: '攒钱目标',
-    icon: 'trending-up-outline',
-    color: '#F59E0B',
-    desc: '每月期望存入储蓄的金额',
-  },
+  { key: 'income',    label: '月收入（税后）',  icon: 'wallet-outline',       color: '#10B981', desc: '每月固定工资或主要收入' },
+  { key: 'essential', label: '刚需支出上限',    icon: 'home-outline',          color: '#3B82F6', desc: '房租、水电煤、伙食、交通等必须支出' },
+  { key: 'savings',   label: '攒钱目标',        icon: 'trending-up-outline',   color: '#F59E0B', desc: '每月期望存入储蓄的金额' },
 ];
 
 export default function BudgetScreen() {
-  const { budget, updateBudget } = useData();
+  const navigation = useNavigation();
+  const { budgets, updateBudget } = useData();
   const insets = useSafeAreaInsets();
+  const [offset, setOffset] = useState(0);
+
+  const targetDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() + offset);
+    return d;
+  }, [offset]);
+
+  const monthKey = useMemo(() => {
+    const y = targetDate.getFullYear();
+    const m = String(targetDate.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}`;
+  }, [targetDate]);
+  const monthLabel = useMemo(
+    () => `${targetDate.getFullYear()}年${targetDate.getMonth() + 1}月`,
+    [targetDate]
+  );
 
   const [form, setForm] = useState({ income: '', essential: '', savings: '' });
 
   useEffect(() => {
+    const b = budgets[monthKey] || DEFAULT_BUDGET;
     setForm({
-      income:    budget.income    > 0 ? String(budget.income)    : '',
-      essential: budget.essential > 0 ? String(budget.essential) : '',
-      savings:   budget.savings   > 0 ? String(budget.savings)   : '',
+      income:    b.income    > 0 ? String(b.income)    : '',
+      essential: b.essential > 0 ? String(b.essential) : '',
+      savings:   b.savings   > 0 ? String(b.savings)   : '',
     });
-  }, [budget]);
+  }, [monthKey, budgets]);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerLeft: () => <Text style={styles.headerTitleText}>预算</Text>,
+      headerTitle: () => (
+        <View style={styles.monthRow}>
+          <TouchableOpacity onPress={() => setOffset((o) => o - 1)} style={styles.monthBtn}>
+            <Ionicons name="chevron-back" size={20} color="#6B7280" />
+          </TouchableOpacity>
+          <Text style={styles.monthLabel}>{monthLabel}</Text>
+          <TouchableOpacity onPress={() => setOffset((o) => o + 1)} style={styles.monthBtn}>
+            <Ionicons name="chevron-forward" size={20} color="#6B7280" />
+          </TouchableOpacity>
+        </View>
+      ),
+      headerTitleAlign: 'center',
+      headerRight: () => <View style={styles.headerSpacer} />,
+    });
+  }, [navigation, monthLabel]);
 
   const freeAmount = useMemo(() => {
     const income    = parseFloat(form.income)    || 0;
@@ -64,10 +87,10 @@ export default function BudgetScreen() {
       planned:   0,
       savings:   parseFloat(form.savings)   || 0,
     };
-    await updateBudget(newBudget);
+    await updateBudget(monthKey, newBudget);
     Keyboard.dismiss();
-    Alert.alert('✅ 已保存', '预算设置已更新，超出时将即时提醒');
-  }, [form, updateBudget]);
+    Alert.alert('✅ 已保存', `${monthLabel}预算设置已更新，超出时将即时提醒`);
+  }, [form, updateBudget, monthKey, monthLabel]);
 
   const freeOk = freeAmount >= 0;
 
@@ -80,7 +103,9 @@ export default function BudgetScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.headerDesc}>设置月度预算，记账时自动检测超支并提醒你</Text>
+        <Text style={styles.headerDesc}>
+          设置 {monthLabel} 月度预算，记账时自动检测超支并提醒你
+        </Text>
 
         {FIELDS.map((field) => (
           <View key={field.key} style={styles.card}>
@@ -113,7 +138,10 @@ export default function BudgetScreen() {
         ))}
 
         {/* Summary */}
-        <View style={[styles.summaryCard, { backgroundColor: freeOk ? '#F0FDF4' : '#FFF1F2', borderColor: freeOk ? '#10B981' : '#EF4444' }]}>
+        <View style={[styles.summaryCard, {
+          backgroundColor: freeOk ? '#F0FDF4' : '#FFF1F2',
+          borderColor: freeOk ? '#10B981' : '#EF4444',
+        }]}>
           <View style={styles.summaryRow}>
             <Ionicons
               name={freeOk ? 'checkmark-circle' : 'alert-circle'}
@@ -134,7 +162,7 @@ export default function BudgetScreen() {
 
         <TouchableOpacity style={styles.saveBtn} onPress={handleSave} activeOpacity={0.85}>
           <Ionicons name="save-outline" size={20} color="#fff" />
-          <Text style={styles.saveBtnText}>保存预算设置</Text>
+          <Text style={styles.saveBtnText}>保存 {monthLabel} 预算</Text>
         </TouchableOpacity>
       </ScrollView>
     </TouchableWithoutFeedback>
@@ -144,6 +172,11 @@ export default function BudgetScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F3F4F6' },
+  headerTitleText: { fontSize: 17, fontWeight: '700', color: '#111827', marginLeft: 16 },
+  monthRow: { flexDirection: 'row', alignItems: 'center' },
+  monthBtn: { padding: 6 },
+  monthLabel: { fontSize: 15, fontWeight: '600', color: '#111827', marginHorizontal: 8 },
+  headerSpacer: { width: 70 },
   headerDesc: { fontSize: 13, color: '#6B7280', marginHorizontal: 16, marginTop: 12, marginBottom: 4 },
   card: {
     backgroundColor: '#fff',
